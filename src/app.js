@@ -9,9 +9,10 @@ app.use(express.json());
 
 app.use('/auth', authRoutes);
 
-app.use('/images', imageRoutes);
-
 app.use("/uploads", express.static("uploads"));
+
+app.use('/image', authMiddleware, imageRoutes);
+
 
 app.get('/', (req, res) => {
   res.json({ message: 'API OK' });
