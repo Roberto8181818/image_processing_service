@@ -5,12 +5,8 @@ const checkImageOwner = async (req, res, next) => {
     const imageId = req.params.id;
     const image = await Image.findByPk(imageId);
 
-    if (!image) {
+    if (!image || image.user_id !== req.user.id) {
       return res.status(404).json({ message: "Imagen no encontrada" });
-    }
-
-    if (image.user_id !== req.user.id) {
-      return res.status(403).json({ message: "No tienes permisos para editar esta imagen" });
     }
 
     req.image = image;

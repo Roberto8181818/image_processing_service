@@ -1,59 +1,59 @@
 const path = require("path");
-const fs = require("fs");
 const sharp = require("sharp");
 const { Image, Transformation, Thumbnail } = require("../models");
-
-const ensureDir = async (dirPath) => {
-  await fs.promises.mkdir(dirPath, { recursive: true });
-};
+const Storage = require("../services/storageService");
 
 const safeBasename = (filename) => {
-  return path.parse(filename).name.replace(/\s+/g, "_");
+  if (!filename) return "file";
+
+  return path
+    .parse(filename)
+    .name.replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_\-]/g, "")
+    .toLowerCase();
 };
 
 module.exports = {
   upload: async (req, res) => {
     try {
-      if (!req.file) {
+      if (!req.file || !req.file.buffer) {
         return res.status(400).json({ error: "No se recibió ninguna imagen" });
       }
 
       const userId = req.user?.id || "guest";
       const userDir = `user_${userId}`;
-
-      const uploadsRoot = path.join(__dirname, "..", "..", "uploads");
-      const userRoot = path.join(uploadsRoot, userDir);
-      const originalsDir = path.join(userRoot, "originals");
-      const thumbsDir = path.join(userRoot, "thumbnails");
-
-      await ensureDir(originalsDir);
-      await ensureDir(thumbsDir);
-
       const timestamp = Date.now();
-      const ext =
-        path.extname(req.file.originalname) ||
-        path.extname(req.file.filename) ||
-        ".jpg";
-      const baseName = safeBasename(req.file.originalname || req.file.filename);
+      const ext = path.extname(req.file.originalname || "") || ".jpg";
+      const baseName = safeBasename(
+        req.file.originalname || `upload_${timestamp}`
+      );
       const finalFilename = `${baseName}_${timestamp}${ext}`;
-      const destPath = path.join(originalsDir, finalFilename);
-
-      await fs.promises.rename(req.file.path, destPath);
-
+      const originalKey = `${userDir}/originals/${finalFilename}`;
       const thumbFilename = `${baseName}_thumb_${timestamp}.jpg`;
-      const thumbPath = path.join(thumbsDir, thumbFilename);
-      await sharp(destPath)
+      const thumbKey = `${userDir}/thumbnails/${thumbFilename}`;
+
+      const originalUrl = await Storage.uploadBuffer(
+        originalKey,
+        req.file.buffer,
+        req.file.mimetype || "application/octet-stream"
+      );
+
+      const thumbBuffer = await sharp(req.file.buffer)
         .resize({ width: 200 })
         .jpeg({ quality: 80 })
-        .toFile(thumbPath);
+        .toBuffer();
 
-      const baseUrl = `${req.protocol}://${req.get("host")}/uploads/${userDir}`;
+      const thumbUrl = await Storage.uploadBuffer(
+        thumbKey,
+        thumbBuffer,
+        "image/jpeg"
+      );
 
       const newImage = await Image.create({
         user_id: req.user?.id || null,
         filename: finalFilename,
-        path: path.relative(uploadsRoot, destPath),
-        url: `${baseUrl}/originals/${finalFilename}`,
+        path: originalKey,
+        url: originalUrl,
         metadata: {
           originalname: req.file.originalname,
           mimetype: req.file.mimetype,
@@ -65,17 +65,23 @@ module.exports = {
       await Thumbnail.create({
         image_id: newImage.id,
         filename: thumbFilename,
-        path: path.relative(uploadsRoot, thumbPath),
-        url: `${baseUrl}/thumbnails/${thumbFilename}`,
+        path: thumbKey,
+        url: thumbUrl,
       });
 
       return res.status(201).json({
-        message: "Imagen original guardada y thumbnail registrado",
-        image: newImage,
+        message: "Imagen original subida y thumbnail creado",
+        image: {
+          image_id: newImage.id,
+          filename: newImage.filename,
+          url: newImage.url,
+          metadata: newImage.metadata,
+        },
+        thumbnail: { filename: thumbFilename, url: thumbUrl },
       });
     } catch (error) {
       console.error("Error subiendo imagen:", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error.message || "Error interno" });
     }
   },
 
@@ -86,7 +92,7 @@ module.exports = {
         resize,
         crop,
         rotate,
-        watermark,
+        // watermark,
         flip,
         mirror,
         compress,
@@ -94,66 +100,29 @@ module.exports = {
         filter,
       } = req.body;
 
-      const image = req.image;
-      if (!image) {
+      const image = req.image || (await Image.findByPk(id));
+      if (!image)
         return res.status(404).json({ message: "Imagen no encontrada" });
-      }
 
-      if (req.user && image.user_id && req.user.id !== image.user_id) {
-        return res
-          .status(403)
-          .json({ message: "No tienes permisos para editar esta imagen" });
-      }
+      const originalKey =
+        image.path ||
+        `user_${image.user_id || "guest"}/originals/${image.filename}`;
+      const inputBuffer = await Storage.getFileBuffer(originalKey);
 
-      const metadata =
-        typeof image.metadata === "string"
-          ? JSON.parse(image.metadata)
-          : image.metadata;
-
-      const userId = image.user_id || req.user?.id || "guest";
-      const userDir = `user_${userId}`;
-      const uploadsRoot = path.join(__dirname, "..", "..", "uploads");
-
-      let inputPath;
-      if (metadata && metadata.path) {
-        inputPath = path.join(uploadsRoot, metadata.path);
-      } else if (image.filename) {
-        inputPath = path.join(
-          uploadsRoot,
-          userDir,
-          "originals",
-          image.filename
-        );
-      } else {
-        return res
-          .status(400)
-          .json({ message: "No se encontró la ruta del archivo original" });
-      }
-
-      if (!fs.existsSync(inputPath)) {
+      if (!inputBuffer || inputBuffer.length === 0) {
         return res.status(404).json({
-          message: `Archivo original no encontrado en el disco: ${inputPath}`,
+          message: "No se pudo obtener el archivo original desde el storage",
         });
       }
 
-      const basename = safeBasename(path.parse(inputPath).name);
-      const editsDir = path.join(uploadsRoot, userDir, "edits", basename);
-      await ensureDir(editsDir);
-
-      const outExt = format
-        ? `.${format.toLowerCase()}`
-        : path.extname(inputPath) || ".jpg";
-      const timestampStr = new Date().toISOString().replace(/[:.]/g, "-");
-      const outFilename = `edit_${timestampStr}${outExt}`;
-      const outputPath = path.join(editsDir, outFilename);
-
-      let pipeline = sharp(inputPath);
+      let pipeline = sharp(inputBuffer);
 
       if (resize) {
-        const w = resize.width || null;
-        const h = resize.height || null;
+        const w = resize.width ? Number(resize.width) : null;
+        const h = resize.height ? Number(resize.height) : null;
         pipeline = pipeline.resize(w, h);
       }
+
       if (crop && typeof crop === "object") {
         pipeline = pipeline.extract({
           left: Math.round(crop.left || 0),
@@ -162,6 +131,7 @@ module.exports = {
           height: Math.round(crop.height),
         });
       }
+
       if (rotate) pipeline = pipeline.rotate(Number(rotate));
       if (flip) pipeline = pipeline.flip();
       if (mirror) pipeline = pipeline.flop();
@@ -179,46 +149,69 @@ module.exports = {
           case "sharpen":
             return pl.sharpen();
           default:
-            console.log(`Filtro no reconocido: ${f}`);
             return pl;
         }
       };
 
       if (Array.isArray(filter)) {
-        filter.forEach((f) => {
-          pipeline = applyFilter(f, pipeline);
-        });
+        filter.forEach((f) => (pipeline = applyFilter(f, pipeline)));
       } else if (typeof filter === "string") {
         pipeline = applyFilter(filter, pipeline);
       }
 
+      let outExt = ".jpg";
+      let contentType = "image/jpeg";
       if (format) {
-        const q = compress ? Number(compress) : 80;
         const fmt = format.toLowerCase();
-        if (fmt === "jpeg" || fmt === "jpg")
-          pipeline = pipeline.jpeg({ quality: q });
-        else if (fmt === "png") pipeline = pipeline.png({ quality: q });
-        else if (fmt === "webp") pipeline = pipeline.webp({ quality: q });
-        else pipeline = pipeline.toFormat(fmt);
+        outExt = `.${fmt}`;
+        if (fmt === "jpeg" || fmt === "jpg") {
+          pipeline = pipeline.jpeg({
+            quality: compress ? Number(compress) : 80,
+          });
+          contentType = "image/jpeg";
+        } else if (fmt === "png") {
+          pipeline = pipeline.png();
+          contentType = "image/png";
+        } else if (fmt === "webp") {
+          pipeline = pipeline.webp({
+            quality: compress ? Number(compress) : 80,
+          });
+          contentType = "image/webp";
+        } else {
+          pipeline = pipeline.toFormat(fmt);
+          contentType = `image/${fmt}`;
+        }
+      } else {
+        pipeline = pipeline.jpeg({ quality: compress ? Number(compress) : 80 });
+        contentType = "image/jpeg";
       }
 
-      await pipeline.toFile(outputPath);
+      const outBuffer = await pipeline.toBuffer();
 
-      const outUrl = `${req.protocol}://${req.get(
-        "host"
-      )}/uploads/${userDir}/edits/${basename}/${outFilename}`;
-      const relativeOutPath = path.relative(uploadsRoot, outputPath);
+      const baseName = safeBasename(path.parse(originalKey).name);
+      const timestampStr = new Date().toISOString().replace(/[:.]/g, "-");
+      const outFilename = `edit_${timestampStr}${outExt}`;
+      const editsDir = `user_${
+        image.user_id || req.user?.id || "guest"
+      }/edits/${baseName}`;
+      const editKey = `${editsDir}/${outFilename}`;
+
+      const editUrl = await Storage.uploadBuffer(
+        editKey,
+        outBuffer,
+        contentType
+      );
 
       const newTransformation = await Transformation.create({
         image_id: image.id,
         filename: outFilename,
-        path: relativeOutPath,
-        url: outUrl,
+        path: editKey,
+        url: editUrl,
         params: {
           resize,
           crop,
           rotate,
-          watermark,
+          // watermark,
           flip,
           mirror,
           compress,
@@ -229,9 +222,13 @@ module.exports = {
 
       return res.json({
         message: "Transformación aplicada con éxito",
-        transformation: newTransformation,
-        url: outUrl,
-        relativePath: relativeOutPath,
+        transformation: {
+          image_id: newTransformation.id,
+          filename: newTransformation.filename,
+          metadata: newTransformation.metadata,
+          params: newTransformation.params,
+        },
+        url: editUrl,
       });
     } catch (error) {
       console.error("Error en transform:", error);
@@ -247,20 +244,38 @@ module.exports = {
       const { id } = req.params;
       const { includeTransformations } = req.query;
 
-      const image = await Image.findByPk(id, {
+      const image = await Image.findOne({
+        where: {
+          id,
+          user_id: req.user.id,
+        },
         include:
           includeTransformations === "true"
             ? [{ model: Transformation, as: "transformations" }]
             : [],
       });
 
-      if (!image) {
+      if (!image)
         return res.status(404).json({ error: "Imagen no encontrada" });
-      }
 
       res.json({
         success: true,
-        data: image,
+        data: {
+          image_id: image.id,
+          filename: image.filename,
+          url: image.url,
+          metadata: image.metadata,
+          ...(image.transformations
+            ? {
+                transformations: image.transformations.map((t) => ({
+                  transformation_id: t.id,
+                  filename: t.filename,
+                  url: t.url,
+                  metadata: t.metadata,
+                })),
+              }
+            : {}),
+        },
       });
     } catch (error) {
       console.error(error);
@@ -271,10 +286,10 @@ module.exports = {
   list: async (req, res) => {
     try {
       const { includeTransformations, page = 1, limit = 10 } = req.query;
-
       const offset = (page - 1) * limit;
 
       const images = await Image.findAll({
+        where: { user_id: req.user.id },
         limit: parseInt(limit),
         offset: parseInt(offset),
         include:
@@ -287,7 +302,22 @@ module.exports = {
       res.json({
         success: true,
         count: images.length,
-        data: images,
+        data: images.map((t) => ({
+          image_id: t.id,
+          filename: t.filename,
+          url: t.url,
+          metadata: t.metadata,
+          ...(t.transformations
+            ? {
+                transformations: t.transformations.map((tr) => ({
+                  transformation_id: tr.id,
+                  filename: tr.filename,
+                  url: tr.url,
+                  metadata: tr.metadata,
+                })),
+              }
+            : {}),
+        })),
       });
     } catch (error) {
       console.error(error);
