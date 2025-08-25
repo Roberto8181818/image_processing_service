@@ -31,7 +31,9 @@ module.exports = {
 
       const timestamp = Date.now();
       const ext =
-        path.extname(req.file.originalname) || path.extname(req.file.filename) || ".jpg";
+        path.extname(req.file.originalname) ||
+        path.extname(req.file.filename) ||
+        ".jpg";
       const baseName = safeBasename(req.file.originalname || req.file.filename);
       const finalFilename = `${baseName}_${timestamp}${ext}`;
       const destPath = path.join(originalsDir, finalFilename);
@@ -98,11 +100,15 @@ module.exports = {
       }
 
       if (req.user && image.user_id && req.user.id !== image.user_id) {
-        return res.status(403).json({ message: "No tienes permisos para editar esta imagen" });
+        return res
+          .status(403)
+          .json({ message: "No tienes permisos para editar esta imagen" });
       }
 
       const metadata =
-        typeof image.metadata === "string" ? JSON.parse(image.metadata) : image.metadata;
+        typeof image.metadata === "string"
+          ? JSON.parse(image.metadata)
+          : image.metadata;
 
       const userId = image.user_id || req.user?.id || "guest";
       const userDir = `user_${userId}`;
@@ -112,7 +118,12 @@ module.exports = {
       if (metadata && metadata.path) {
         inputPath = path.join(uploadsRoot, metadata.path);
       } else if (image.filename) {
-        inputPath = path.join(uploadsRoot, userDir, "originals", image.filename);
+        inputPath = path.join(
+          uploadsRoot,
+          userDir,
+          "originals",
+          image.filename
+        );
       } else {
         return res
           .status(400)
@@ -120,16 +131,18 @@ module.exports = {
       }
 
       if (!fs.existsSync(inputPath)) {
-        return res
-          .status(404)
-          .json({ message: `Archivo original no encontrado en el disco: ${inputPath}` });
+        return res.status(404).json({
+          message: `Archivo original no encontrado en el disco: ${inputPath}`,
+        });
       }
 
       const basename = safeBasename(path.parse(inputPath).name);
       const editsDir = path.join(uploadsRoot, userDir, "edits", basename);
       await ensureDir(editsDir);
 
-      const outExt = format ? `.${format.toLowerCase()}` : path.extname(inputPath) || ".jpg";
+      const outExt = format
+        ? `.${format.toLowerCase()}`
+        : path.extname(inputPath) || ".jpg";
       const timestampStr = new Date().toISOString().replace(/[:.]/g, "-");
       const outFilename = `edit_${timestampStr}${outExt}`;
       const outputPath = path.join(editsDir, outFilename);
@@ -182,7 +195,8 @@ module.exports = {
       if (format) {
         const q = compress ? Number(compress) : 80;
         const fmt = format.toLowerCase();
-        if (fmt === "jpeg" || fmt === "jpg") pipeline = pipeline.jpeg({ quality: q });
+        if (fmt === "jpeg" || fmt === "jpg")
+          pipeline = pipeline.jpeg({ quality: q });
         else if (fmt === "png") pipeline = pipeline.png({ quality: q });
         else if (fmt === "webp") pipeline = pipeline.webp({ quality: q });
         else pipeline = pipeline.toFormat(fmt);
@@ -225,6 +239,59 @@ module.exports = {
         message: "Error al transformar la imagen",
         error: error.message,
       });
+    }
+  },
+
+  getOne: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { includeTransformations } = req.query;
+
+      const image = await Image.findByPk(id, {
+        include:
+          includeTransformations === "true"
+            ? [{ model: Transformation, as: "transformations" }]
+            : [],
+      });
+
+      if (!image) {
+        return res.status(404).json({ error: "Imagen no encontrada" });
+      }
+
+      res.json({
+        success: true,
+        data: image,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Error al buscar imagen" });
+    }
+  },
+
+  list: async (req, res) => {
+    try {
+      const { includeTransformations, page = 1, limit = 10 } = req.query;
+
+      const offset = (page - 1) * limit;
+
+      const images = await Image.findAll({
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        include:
+          includeTransformations === "true"
+            ? [{ model: Transformation, as: "transformations" }]
+            : [],
+        order: [["createdAt", "DESC"]],
+      });
+
+      res.json({
+        success: true,
+        count: images.length,
+        data: images,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Error al listar imágenes" });
     }
   },
 };
