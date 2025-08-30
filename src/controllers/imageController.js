@@ -220,7 +220,7 @@ module.exports = {
         },
       });
 
-      return res.json({
+      return res.status(200).json({
         message: "Transformación aplicada con éxito",
         transformation: {
           image_id: newTransformation.id,
