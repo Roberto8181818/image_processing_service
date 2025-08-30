@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "migrate:fresh": "npx sequelize-cli db:drop && npx sequelize-cli db:create && npx sequelize-cli db:migrate"
+    "migrate:fresh:dev": "cross-env NODE_ENV=development npx sequelize-cli db:drop && cross-env NODE_ENV=development npx sequelize-cli db:create && cross-env NODE_ENV=development npx sequelize-cli db:migrate",
+    "migrate:fresh:test": "cross-env NODE_ENV=test npx sequelize-cli db:drop && cross-env NODE_ENV=test npx sequelize-cli db:create && cross-env NODE_ENV=test npx sequelize-cli db:migrate",
+    "migrate:fresh:prod": "cross-env NODE_ENV=production npx sequelize-cli db:drop && cross-env NODE_ENV=production npx sequelize-cli db:create && cross-env NODE_ENV=production npx sequelize-cli db:migrate",
+    "test": "cross-env NODE_ENV=test jest --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -24,7 +27,10 @@
     "sharp": "^0.34.3"
   },
   "devDependencies": {
+    "cross-env": "^10.0.0",
+    "jest": "^30.1.1",
     "nodemon": "^3.1.10",
-    "sequelize-cli": "^6.6.3"
+    "sequelize-cli": "^6.6.3",
+    "supertest": "^7.1.4"
   }
 }
