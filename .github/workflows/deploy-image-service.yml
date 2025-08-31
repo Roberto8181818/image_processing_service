@@ -1,0 +1,46 @@
+name: CI/CD Image Processing Service
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+
+      - run: npm install
+
+      - name: Run tests
+        env:
+          DB_TEST_USER: test
+          DB_TEST_PASSWORD: test
+          DB_TEST_NAME: testdb
+          DB_TEST_HOST: localhost
+          DB_TEST_PORT: 5432
+          JWT_SECRET: testsecret
+        run: npm test
