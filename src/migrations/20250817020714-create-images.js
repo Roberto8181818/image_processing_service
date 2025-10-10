@@ -11,6 +11,8 @@ module.exports = {
       user_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
+        references: { model: "Users", key: "id" },
+        onDelete: "CASCADE",
       },
       filename: {
         type: Sequelize.STRING,
@@ -38,6 +40,13 @@ module.exports = {
         allowNull: false,
         defaultValue: Sequelize.fn("NOW"),
       },
+    });
+
+    await queryInterface.addIndex("Images", ["user_id"], {
+      name: "images_user_id_idx",
+    });
+    await queryInterface.addIndex("Images", ["created_at"], {
+      name: "images_created_at_idx",
     });
   },
 

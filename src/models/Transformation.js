@@ -14,17 +14,40 @@ module.exports = (sequelize, DataTypes) => {
 
   Transformation.init(
     {
-      image_id: DataTypes.INTEGER,
-      filename: DataTypes.STRING,
-      path: DataTypes.STRING,
-      url: DataTypes.STRING,
-      params: DataTypes.JSONB,
+      image_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+          model: "Images",
+          key: "id",
+        },
+      },
+      filename: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      path: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      url: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+          isUrl: { msg: "Debe ser una URL válida" },
+        },
+      },
+      params: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: "Transformation",
       tableName: "Transformations",
       underscored: true,
+      indexes: [{ fields: ["image_id"] }],
     }
   );
 

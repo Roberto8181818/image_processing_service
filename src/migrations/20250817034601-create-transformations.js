@@ -41,6 +41,10 @@ module.exports = {
         defaultValue: Sequelize.fn("NOW"),
       },
     });
+
+    await queryInterface.addIndex("Transformations", ["image_id"], {
+      name: "transformations_image_id_idx",
+    });
   },
 
   async down(queryInterface) {

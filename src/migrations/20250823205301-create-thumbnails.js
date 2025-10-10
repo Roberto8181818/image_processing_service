@@ -37,6 +37,10 @@ module.exports = {
         defaultValue: Sequelize.fn("NOW"),
       },
     });
+
+    await queryInterface.addIndex("Thumbnails", ["image_id"], {
+      name: "thumbnails_image_id_idx",
+    });
   },
 
   async down(queryInterface) {

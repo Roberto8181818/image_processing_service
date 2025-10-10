@@ -4,11 +4,6 @@ const jwt = require("jsonwebtoken");
 
 module.exports = (sequelize, DataTypes) => {
   class User extends Model {
-    /**
-     * Helper method for defining associations.
-     * This method is not a part of Sequelize lifecycle.
-     * The `models/index` file will call this method automatically.
-     */
     static associate(models) {
       User.hasMany(models.Image, {
         foreignKey: "user_id",
@@ -16,6 +11,7 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: "CASCADE",
       });
     }
+
     generateToken() {
       return jwt.sign(
         { id: this.id, username: this.username },
@@ -24,15 +20,34 @@ module.exports = (sequelize, DataTypes) => {
       );
     }
   }
+
   User.init(
     {
-      username: DataTypes.STRING,
-      password_hash: DataTypes.STRING,
+      username: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+        validate: {
+          notEmpty: { msg: "El nombre de usuario no puede estar vacío" },
+          len: { args: [3, 50], msg: "Debe tener entre 3 y 50 caracteres" },
+        },
+      },
+      password: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+          notEmpty: { msg: "La contraseña no puede estar vacía" },
+        },
+      },
     },
     {
       sequelize,
       modelName: "User",
+      tableName: "Users",
+      underscored: true,
+      indexes: [{ unique: true, fields: ["username"] }],
     }
   );
+
   return User;
 };

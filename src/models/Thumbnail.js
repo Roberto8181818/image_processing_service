@@ -14,16 +14,39 @@ module.exports = (sequelize, DataTypes) => {
 
   Thumbnail.init(
     {
-      image_id: DataTypes.INTEGER,
-      filename: DataTypes.STRING,
-      path: DataTypes.STRING,
-      url: DataTypes.STRING,
+      image_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+          model: "Images",
+          key: "id",
+        },
+      },
+      filename: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+          notEmpty: { msg: "El nombre del archivo no puede estar vacío" },
+        },
+      },
+      path: {
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      url: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+          isUrl: { msg: "Debe ser una URL válida" },
+        },
+      },
     },
     {
       sequelize,
       modelName: "Thumbnail",
       tableName: "Thumbnails",
       underscored: true,
+      indexes: [{ fields: ["image_id"] }],
     }
   );
 
