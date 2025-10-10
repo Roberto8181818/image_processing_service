@@ -29,9 +29,10 @@ beforeAll(async () => {
 
   await Transformation.create({
     image_id: testImage.id,
-    type: "resize",
+    filename: "resize_mock.png",
+    path: "/mock/path/resize_mock.png",
+    url: "http://mockstorage.com/resize_mock.png",
     params: JSON.stringify({ width: 400, height: 300 }),
-    url: "http://test.com/image_resized.jpg",
   });
 });
 
